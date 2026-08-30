@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>✦ Starlight ✦</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(1200px 800px at 20% 20%, #141a33 0%, transparent 60%),
+      radial-gradient(1000px 700px at 80% 30%, #1a1433 0%, transparent 55%),
+      radial-gradient(900px 900px at 50% 100%, #0f1a2e 0%, transparent 60%),
+      #05060f;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    cursor: crosshair;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { position: fixed; inset: 0; display: block; }
+  .overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    pointer-events: none; text-align: center; user-select: none;
+  }
+  h1 {
+    font-size: clamp(2.5rem, 8vw, 6rem);
+    font-weight: 700; letter-spacing: .35em; text-indent: .35em;
+    color: #eaf0ff;
+    text-shadow: 0 0 24px rgba(140,170,255,.55), 0 0 64px rgba(180,140,255,.35);
+    animation: float 5s ease-in-out infinite;
+  }
+  .hint {
+    margin-top: 1.5rem;
+    font-size: clamp(.85rem, 2.5vw, 1.05rem);
+    letter-spacing: .2em; color: rgba(210,220,255,.55);
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); opacity: .95; }
+    50% { transform: translateY(-8px); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="overlay">
+  <h1>STARLIGHT</h1>
+  <div class="hint">移动鼠标聚拢星光 · 点击绽放光爆</div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0, dpr = 1;
+
+const PALETTE = ['#8aa7ff','#b48cff','#ff7ab5','#7ad7ff','#ffe07a','#7affb8','#ff9e64'];
+
+const LINK_DIST = 130;      // 连线距离
+const MOUSE_RADIUS = 180;   // 鼠标聚拢半径
+const BASE_COUNT = 140;     // 初始星点
+const MAX_PARTICLES = 420;  // 上限，防止疯狂点击
+
+const mouse = { x: -9999, y: -9999, active: false };
+const particles = [];
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[(Math.random() * arr.length) | 0];
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function makeParticle(x, y, burst) {
+  const p = {
+    x: x ?? Math.random() * W,
+    y: y ?? Math.random() * H,
+    r: burst ? rand(1.5, 3.2) : rand(0.8, 2.6),
+    color: pick(PALETTE),
+    life: Math.random() * Math.PI * 2,
+    ttl: burst ? rand(50, 110) : Infinity,
+  };
+  const a = Math.random() * Math.PI * 2;
+  const sp = burst ? rand(1.5, 6) : rand(0.15, 0.6);
+  p.vx = Math.cos(a) * sp;
+  p.vy = Math.sin(a) * sp;
+  return p;
+}
+
+function init() {
+  for (let i = 0; i < BASE_COUNT; i++) particles.push(makeParticle());
+}
+
+function burst(x, y) {
+  // 推开附近已有的星点
+  for (const p of particles) {
+    const dx = p.x - x, dy = p.y - y;
+    const d = Math.hypot(dx, dy);
+    if (d < 220 && d > 0.001) {
+      const f = (220 - d) / 220 * 9;
+      p.vx += dx / d * f;
+      p.vy += dy / d * f;
+    }
+  }
+  // 生成一圈新的彩色星点
+  if (particles.length < MAX_PARTICLES) {
+    const n = 36;
+    for (let i = 0; i < n; i++) particles.push(makeParticle(x, y, true));
+  }
+}
+
+function step() {
+  // 更新
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life += 0.04;
+
+    if (mouse.active) {
+      const dx = mouse.x - p.x, dy = mouse.y - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < MOUSE_RADIUS * MOUSE_RADIUS) {
+        const d = Math.sqrt(d2) || 1;
+        const f = (MOUSE_RADIUS - d) / MOUSE_RADIUS * 0.045;
+        p.vx += dx / d * f;
+        p.vy += dy / d * f;
+      }
+    }
+
+    p.vx *= 0.985;  // 摩擦力
+    p.vy *= 0.985;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // 边界环绕
+    if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
+    if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
+
+    if (p.ttl !== Infinity) {
+      p.ttl--;
+      if (p.ttl <= 0) { particles.splice(i, 1); continue; }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  // 鼠标光晕
+  if (mouse.active) {
+    const g = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 60);
+    g.addColorStop(0, 'rgba(160,180,255,0.18)');
+    g.addColorStop(1, 'rgba(160,180,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(mouse.x - 60, mouse.y - 60, 120, 120);
+  }
+
+  // 连线（星座）
+  for (let i = 0; i < particles.length; i++) {
+    const a = particles[i];
+    for (let j = i + 1; j < particles.length; j++) {
+      const b = particles[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < LINK_DIST * LINK_DIST) {
+        const o = (1 - Math.sqrt(d2) / LINK_DIST) * 0.35;
+        ctx.strokeStyle = a.color;
+        ctx.globalAlpha = o;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // 星点
+  for (const p of particles) {
+    const tw = 0.6 + Math.sin(p.life) * 0.4;               // 闪烁
+    const alpha = p.ttl === Infinity ? 0.9 : Math.min(1, p.ttl / 40);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * tw, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function frame() {
+  ctx.clearRect(0, 0, W, H);
+  step();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+window.addEventListener('pointermove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+window.addEventListener('pointerleave', () => { mouse.active = false; });
+canvas.addEventListener('pointerdown', e => burst(e.clientX, e.clientY));
+
+resize();
+init();
+frame();
+</script>
+</body>
+</html>
